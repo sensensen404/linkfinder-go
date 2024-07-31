@@ -14,6 +14,7 @@ var regexStr = `(?:"|')(((?:[a-zA-Z]{1,10}://|//)[^"'/]{1,}\.[a-zA-Z]{2,}[^"']{0
 func main() {
 	fileFlag := flag.String("f", "", "Input file")
 	dirFlag := flag.String("d", "", "Input directory")
+	outputFlag := flag.String("o", "", "Output file")
 	flag.Parse()
 
 	if *fileFlag == "" && *dirFlag == "" {
@@ -41,12 +42,23 @@ func main() {
 		}
 	}
 
+	var output *os.File
+	var err error
+	if *outputFlag != "" {
+		output, err = os.Create(*outputFlag)
+		if err != nil {
+			fmt.Printf("Error creating output file %s: %v\n", *outputFlag, err)
+			os.Exit(1)
+		}
+		defer output.Close()
+	}
+
 	for _, file := range files {
-		processFile(file)
+		processFile(file, output)
 	}
 }
 
-func processFile(filePath string) {
+func processFile(filePath string, output *os.File) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		fmt.Printf("Error opening file %s: %v\n", filePath, err)
@@ -62,17 +74,29 @@ func processFile(filePath string) {
 
 	matches := findURLs(string(content))
 	for _, match := range matches {
-		fmt.Println(match)
+		if output != nil {
+			_, err := output.WriteString(match + "\n")
+			if err != nil {
+				fmt.Printf("Error writing to output file: %v\n", err)
+				return
+			}
+		} else {
+			fmt.Println(match)
+		}
 	}
 }
 
 func findURLs(content string) []string {
 	re := regexp.MustCompile(regexStr)
-	matches := re.FindAllString(content, -1)
+	matchGroups := re.FindAllStringSubmatch(content, -1)
 
 	uniqueMatches := make(map[string]bool)
-	for _, match := range matches {
-		uniqueMatches[match] = true
+	for _, group := range matchGroups {
+		for _, match := range group[1:] {
+			if match != "" {
+				uniqueMatches[match] = true
+			}
+		}
 	}
 
 	var result []string
