@@ -53,12 +53,27 @@ func main() {
 		defer output.Close()
 	}
 
+	uniqueMatches := make(map[string]bool)
 	for _, file := range files {
-		processFile(file, output)
+		processFile(file, output, uniqueMatches)
+	}
+
+	if output != nil {
+		for match := range uniqueMatches {
+			_, err := output.WriteString(match + "\n")
+			if err != nil {
+				fmt.Printf("Error writing to output file: %v\n", err)
+				return
+			}
+		}
+	} else {
+		for match := range uniqueMatches {
+			fmt.Println(match)
+		}
 	}
 }
 
-func processFile(filePath string, output *os.File) {
+func processFile(filePath string, output *os.File, uniqueMatches map[string]bool) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		fmt.Printf("Error opening file %s: %v\n", filePath, err)
@@ -74,15 +89,7 @@ func processFile(filePath string, output *os.File) {
 
 	matches := findURLs(string(content))
 	for _, match := range matches {
-		if output != nil {
-			_, err := output.WriteString(match + "\n")
-			if err != nil {
-				fmt.Printf("Error writing to output file: %v\n", err)
-				return
-			}
-		} else {
-			fmt.Println(match)
-		}
+		uniqueMatches[match] = true
 	}
 }
 
