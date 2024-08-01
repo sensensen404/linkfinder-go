@@ -7,6 +7,7 @@ import (
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -94,11 +95,14 @@ func processURL(url string, uniqueMatches map[string]bool) {
 	browser := rod.New().MustConnect()
 	defer browser.MustClose()
 
-	page := browser.MustPage(url)
-	page.MustNavigate(url).MustWaitLoad()
-
 	router := setupRouter(browser)
 	go router.Run()
+
+	page, err := browser.Page(proto.TargetCreateTarget{URL: url})
+	if err != nil {
+		fmt.Println("browser.Page err:", err)
+		page.Close()
+	}
 
 	html, err := page.HTML()
 	if err != nil {
@@ -108,7 +112,6 @@ func processURL(url string, uniqueMatches map[string]bool) {
 
 	processContent(html, uniqueMatches)
 
-	page.MustNavigate(url).MustWaitLoad()
 	router.Stop()
 }
 
@@ -193,5 +196,28 @@ func setupRouter(browser *rod.Browser) *rod.HijackRouter {
 }
 
 func hijackTraffic(ctx *rod.Hijack) {
+	requestType := ctx.Request.Type()
+	if requestType == proto.NetworkResourceTypeFont || requestType == proto.NetworkResourceTypeMedia || requestType == proto.NetworkResourceTypeImage {
+		ctx.Response.Fail(proto.NetworkErrorReasonBlockedByClient)
+		return
+	}
+
 	ctx.ContinueRequest(&proto.FetchContinueRequest{})
+
+	if err := ctx.LoadResponse(http.DefaultClient, true); err != nil {
+		fmt.Printf("Error loading response: %v\n", err)
+		return
+	}
+
+	bodyBytes := ctx.Response.Payload().Body
+
+	content := string(bodyBytes)
+
+	matches := findURLs(content)
+
+	for _, match := range matches {
+		uniqueMatches[match] = true
+	}
 }
+
+var uniqueMatches = make(map[string]bool)
